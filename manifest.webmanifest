@@ -1,12 +1,13 @@
 {
   "name": "Моя PDF-бібліотека",
-  "short_name": "PDF Library",
-  "description": "PWA PDF reader with half-page mobile reading mode",
-"start_url": "/books/",
-"scope": "/books/",
+  "short_name": "Мої книги",
+  "description": "PWA-бібліотека PDF-книжок з серіями, пріоритетами та прогресом",
+  "start_url": "/books/",
+  "scope": "/books/",
   "display": "standalone",
   "background_color": "#0f172a",
   "theme_color": "#0f172a",
+  "orientation": "any",
   "icons": [
     {
       "src": "icons/icon-192.png",

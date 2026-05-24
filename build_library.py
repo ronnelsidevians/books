@@ -1,88 +1,63 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Build static GitHub Pages PDF PWA.
-Scans /books/*.pdf and injects metadata into template.html.
-Compatible with: python build_library.py --out dist --title "..."
-"""
 from pathlib import Path
-import argparse, json, html, re, unicodedata, shutil
+import argparse, json, re, unicodedata
+ROOT=Path(__file__).resolve().parent
+BOOKS=ROOT/'books'; DATA=ROOT/'data'; COVERS=ROOT/'covers'
+TR={'а':'a','б':'b','в':'v','г':'h','ґ':'g','д':'d','е':'e','є':'ie','ж':'zh','з':'z','и':'y','і':'i','ї':'i','й':'i','к':'k','л':'l','м':'m','н':'n','о':'o','п':'p','р':'r','с':'s','т':'t','у':'u','ф':'f','х':'kh','ц':'ts','ч':'ch','ш':'sh','щ':'shch','ь':'','ю':'iu','я':'ia','ы':'y','э':'e','ъ':'','ё':'yo'}
 
-ROOT = Path(__file__).resolve().parent
-BOOKS_DIR = ROOT / "books"
-TEMPLATE = ROOT / "template.html"
+def slug(s):
+    s=''.join(TR.get(c,c) for c in s.lower())
+    s=unicodedata.normalize('NFKD',s)
+    s=''.join(c for c in s if not unicodedata.combining(c))
+    return re.sub(r'[^a-z0-9]+','-',s).strip('-') or 'book'
 
-TR = {
-    'а':'a','б':'b','в':'v','г':'h','ґ':'g','д':'d','е':'e','є':'ie','ж':'zh','з':'z','и':'y','і':'i','ї':'i','й':'i',
-    'к':'k','л':'l','м':'m','н':'n','о':'o','п':'p','р':'r','с':'s','т':'t','у':'u','ф':'f','х':'kh','ц':'ts','ч':'ch',
-    'ш':'sh','щ':'shch','ь':'','ю':'iu','я':'ia','ы':'y','э':'e','ъ':'','ё':'yo'
-}
+def parse_series_and_order(pdf):
+    rel = pdf.relative_to(BOOKS)
+    series = ''
+    order = None
+    title = pdf.stem.strip()
+    if len(rel.parts) > 1:
+        series = rel.parts[0]
+        m = re.match(r'^\s*(\d+)[\s._\-–—]+(.+)$', title)
+        if m:
+            order = int(m.group(1))
+            title = m.group(2).strip()
+    return series, order, title
 
-def slug(text: str) -> str:
-    text = ''.join(TR.get(ch, ch) for ch in text.lower())
-    text = unicodedata.normalize('NFKD', text)
-    text = ''.join(ch for ch in text if not unicodedata.combining(ch))
-    text = re.sub(r'[^a-z0-9]+', '-', text).strip('-')
-    return text or 'book'
-
-def scan_books():
-    BOOKS_DIR.mkdir(exist_ok=True)
-    pdfs = sorted(list(BOOKS_DIR.glob('*.pdf')) + list(BOOKS_DIR.glob('*.PDF')), key=lambda p: p.name.lower())
-    used = set()
-    books = []
-    for pdf in pdfs:
-        title = pdf.stem.strip()
-        base = slug(title)
-        ident = base
-        i = 2
-        while ident in used:
-            ident = f'{base}-{i}'
-            i += 1
-        used.add(ident)
-        books.append({
-            'id': ident,
-            'title': title,
-            'file': 'books/' + pdf.name,
-            'category': 'PDF',
-            'tags': []
-        })
-    return books
+def render_cover(pdf_path,out,zoom=2.0):
+    try:
+        import fitz
+        from PIL import Image
+        doc=fitz.open(str(pdf_path)); page=doc.load_page(0); r=page.rect
+        clip=fitz.Rect(r.x0+r.width/2,r.y0,r.x1,r.y1)  # права половина першої сторінки
+        pix=page.get_pixmap(matrix=fitz.Matrix(zoom,zoom),clip=clip,alpha=False)
+        img=Image.frombytes('RGB',[pix.width,pix.height],pix.samples)
+        target=2/3; w,h=img.size
+        if h and w/h>target:
+            nw=int(h*target); left=max(0,(w-nw)//2); img=img.crop((left,0,left+nw,h))
+        if img.width>720:
+            nh=int(img.height*(720/img.width)); img=img.resize((720,nh),Image.LANCZOS)
+        out.parent.mkdir(exist_ok=True); img.save(out,'JPEG',quality=88,optimize=True); return True
+    except Exception as e:
+        print('Cover skipped:', pdf_path.name, e); return False
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--out', default='dist')
-    parser.add_argument('--title', default='Моя PDF-бібліотека')
-    args = parser.parse_args()
-
-    out = ROOT / args.out
-    if out.exists():
-        shutil.rmtree(out)
-    out.mkdir(parents=True, exist_ok=True)
-
-    books = scan_books()
-    data = json.dumps(books, ensure_ascii=False, separators=(',', ':')).replace('</', '<\\/')
-
-    if not TEMPLATE.exists():
-        raise FileNotFoundError('template.html not found in repository root')
-
-    result = TEMPLATE.read_text(encoding='utf-8')
-    result = result.replace('__TITLE__', html.escape(args.title)).replace('__BOOKS__', data)
-
-    (out / 'index.html').write_text(result, encoding='utf-8')
-    (ROOT / 'index.html').write_text(result, encoding='utf-8')
-    (out / '.nojekyll').write_text('', encoding='utf-8')
-
-    for name in ['manifest.webmanifest', 'sw.js']:
-        src = ROOT / name
-        if src.exists():
-            shutil.copy2(src, out / name)
-
-    if (ROOT / 'icons').exists():
-        shutil.copytree(ROOT / 'icons', out / 'icons', dirs_exist_ok=True)
-    if BOOKS_DIR.exists():
-        shutil.copytree(BOOKS_DIR, out / 'books', dirs_exist_ok=True)
-
-    print(f'Built {out}/index.html')
-    print(f'Books found: {len(books)}')
-
-if __name__ == '__main__':
-    main()
+    p=argparse.ArgumentParser(); p.add_argument('--title',default='Моя PDF-бібліотека'); p.add_argument('--author',default='Невідомий автор'); p.add_argument('--category',default='PDF'); p.add_argument('--cover-zoom',type=float,default=2.0); a=p.parse_args()
+    BOOKS.mkdir(exist_ok=True); DATA.mkdir(exist_ok=True); COVERS.mkdir(exist_ok=True)
+    pdfs=sorted([x for x in BOOKS.rglob('*') if x.is_file() and x.suffix.lower()=='.pdf'], key=lambda x:str(x.relative_to(BOOKS)).lower())
+    used=set(); books=[]; covers=0
+    for pdf in pdfs:
+        series, order, title = parse_series_and_order(pdf)
+        base=slug((series+'-' if series else '') + title); ident=base; i=2
+        while ident in used: ident=f'{base}-{i}'; i+=1
+        used.add(ident)
+        cover_file=COVERS/f'{ident}.jpg'; ok=render_cover(pdf,cover_file,a.cover_zoom); covers += 1 if ok else 0
+        rel='books/' + '/'.join(pdf.relative_to(BOOKS).parts)
+        books.append({'id':ident,'title':title,'author':a.author,'category':a.category,'file':rel,'cover':'covers/'+cover_file.name if ok else '', 'series':series, 'order':order, 'tags':[]})
+    books.sort(key=lambda b:(b.get('series') or 'яяя', b.get('order') if b.get('order') is not None else 999999, b['title'].lower()))
+    (DATA/'books.json').write_text(json.dumps({'title':a.title,'books':books},ensure_ascii=False,indent=2),encoding='utf-8')
+    print(f'PDF found: {len(books)}')
+    print(f'Covers generated: {covers}')
+    print('Generated data/books.json')
+if __name__=='__main__': main()
