@@ -1,7 +1,7 @@
 {
-  "name": "Моя PDF-бібліотека",
-  "short_name": "Мої книги",
-  "description": "PWA-бібліотека PDF-книжок з серіями, пріоритетами та прогресом",
+  "name": "Книги Марка і Давида",
+  "short_name": "Книги",
+  "description": "PWA-бібліотека PDF-книжок Марка і Давида",
   "start_url": "/books/",
   "scope": "/books/",
   "display": "standalone",

@@ -31,7 +31,6 @@ def fallback_cover(out,title):
     img.save(out,'JPEG',quality=88)
 
 def cover(pdf,out,zoom=2.0):
-    """Cover = right half of first page, top anchored, cropped vertically to hide lower text band."""
     try:
         import fitz
         from PIL import Image
@@ -39,15 +38,11 @@ def cover(pdf,out,zoom=2.0):
         clip=fitz.Rect(r.x0+r.width/2,r.y0,r.x1,r.y1)
         pix=page.get_pixmap(matrix=fitz.Matrix(zoom,zoom),clip=clip,alpha=False)
         img=Image.frombytes('RGB',[pix.width,pix.height],pix.samples)
-        # top crop: keep upper 78%, so bottom title/text band does not appear in cards
         w,h=img.size
         img=img.crop((0,0,w,int(h*0.78)))
-        # force a wider/shorter cover ratio; card CSS will object-position: top
-        target=0.82
-        w,h=img.size
+        target=0.82; w,h=img.size
         if h and w/h < target:
-            nh=int(w/target)
-            img=img.crop((0,0,w,min(h,nh)))
+            nh=int(w/target); img=img.crop((0,0,w,min(h,nh)))
         if img.width>760:
             nh=int(img.height*(760/img.width)); img=img.resize((760,nh),Image.LANCZOS)
         out.parent.mkdir(exist_ok=True); img.save(out,'JPEG',quality=88,optimize=True); return True
@@ -75,7 +70,7 @@ def make_collage(series_name, cover_paths, out):
 
 def main():
     p=argparse.ArgumentParser()
-    p.add_argument('--title',default='Моя PDF-бібліотека')
+    p.add_argument('--title',default='Книги Марка і Давида')
     p.add_argument('--author',default='Oleksandr Ryzhkov')
     p.add_argument('--category',default='PDF')
     p.add_argument('--cover-zoom',type=float,default=2.0)
