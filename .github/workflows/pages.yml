@@ -29,12 +29,13 @@ jobs:
           python build_library.py --title "$SITE_TITLE"
           find books -type f -iname "*.pdf" | sort || true
           cat data/books.json
-      - name: Prepare artifact
-        run: |
-          rm -rf dist
-          mkdir -p dist
-          cp -R index.html style.css app.js manifest.webmanifest sw.js .nojekyll icons data covers books dist/
-      - uses: actions/configure-pages@v5
+- name: Prepare artifact
+  run: |
+    rm -rf dist
+    mkdir -p dist
+    cp -R index.html style.css app.js manifest.webmanifest sw.js icons data covers books dist/
+    touch dist/.nojekyll
+    - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
           path: "dist"
