@@ -4,17 +4,7 @@ const $=s=>document.querySelector(s), $$=s=>Array.from(document.querySelectorAll
 const KEY='books-progress-v8';
 let books=[], series=[], currentSeries='', progress=JSON.parse(localStorage.getItem(KEY)||'{}'), currentBook=null, pdfDoc=null, unit=1, rendering=false, deferredInstallPrompt=null;
 const pageWrap=$('#pageWrap');
-function st(id){
-  const x=progress[id]||(progress[id]={status:'unread',unit:1,lastPage:1,totalUnits:null,totalPages:null,priority:'normal',updatedAt:null});
-  if(!x.status)x.status='unread';
-  if(!x.unit)x.unit=1;
-  if(!x.lastPage)x.lastPage=1;
-  if(!x.priority)x.priority='normal';
-  if(typeof x.hidden!=='boolean')x.hidden=false;
-  if(typeof x.rating!=='number')x.rating=null;
-  if(typeof x.comment!=='string')x.comment='';
-  return x;
-}
+function st(id){const x=progress[id]||(progress[id]={status:'unread',unit:1,lastPage:1,totalUnits:null,totalPages:null,priority:'normal',updatedAt:null}); if(!x.status)x.status='unread'; if(!x.unit)x.unit=1; if(!x.lastPage)x.lastPage=1; if(!x.priority)x.priority='normal'; if(typeof x.hidden!=='boolean')x.hidden=false; if(typeof x.rating!=='number')x.rating=null; if(typeof x.comment!=='string')x.comment=''; return x}
 function save(){localStorage.setItem(KEY,JSON.stringify(progress,null,2)); stats()}
 function esc(s=''){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]))}
 function url(s){return encodeURI(s)}
@@ -28,28 +18,11 @@ function updateSliderLabel(){const label=$('#sliderLabel'); if(label) label.text
 async function loadBooks(){const r=await fetch('./data/books.json',{cache:'no-store'}); const data=await r.json(); books=data.books||[]; series=(data.series||[]).map(s=>({...s,path:s.path||s.title,parent:s.parent??''})); $('#appTitle').textContent=data.title||'Книги Марка і Давида'; document.title=data.title||'Книги Марка і Давида'; renderLibrary()}
 function stats(){ $('#totalBooks').textContent=books.length; $('#readBooks').textContent=books.filter(b=>st(b.id).status==='read').length; $('#readingBooks').textContent=books.filter(b=>st(b.id).status==='reading').length }
 function priorityRank(v){return {high:0,normal:1,low:2}[v]??1}
-function currentTitle(){if(!currentSeries)return ''; const s=series.find(x=>x.path===currentSeries||x.title===currentSeries); return s?s.title:currentSeries.split('/').pop()}
 function parentSeriesPath(path){if(!path)return ''; const i=path.lastIndexOf('/'); return i<0?'':path.slice(0,i)}
-function renderLibrary(){
-  const q=$('#search').value.trim().toLowerCase(), f=$('#filter').value;
-  let html='';
-  const allBooks=books.filter(b=>{const x=st(b.id), hay=[b.title,b.author,b.category,b.series,...(b.tags||[])].join(' ').toLowerCase(); const hiddenOk=f==='hidden'?x.hidden:!x.hidden; const statusOk=f==='all'||f==='hidden'||x.status===f; return hiddenOk&&hay.includes(q)&&statusOk});
-  stats();
-  if(currentSeries){
-    html+=`<button class="back primary" id="backToAll">← ${currentSeries.includes('/')?'Назад':'Усі книги'}</button>`;
-    const childSeries=series.filter(s=>s.parent===currentSeries && (s.title.toLowerCase().includes(q)||s.bookIds.some(id=>allBooks.find(b=>b.id===id)))).map(seriesCard).join('');
-    const arr=allBooks.filter(b=>b.series===currentSeries).sort(bookSort);
-    html+=childSeries+arr.map(bookCard).join('')||'<div class="empty">У цій папці немає книг.</div>';
-  }else{
-    const serieCards=series.filter(s=>(!s.parent) && (s.title.toLowerCase().includes(q)||s.bookIds.some(id=>allBooks.find(b=>b.id===id)))).map(seriesCard).join('');
-    const standalone=allBooks.filter(b=>!b.series).sort(bookSort).map(bookCard).join('');
-    html=serieCards+standalone;
-  }
-  $('#library').innerHTML=html||'<div class="empty glass">PDF не знайдено. Додай файли у папку books/ і зроби push.</div>'; wireCards()
-}
+function ratingText(r){return typeof r==='number' ? (r===0?'0 ☆':'★'.repeat(r)+'☆'.repeat(5-r)) : 'Без оцінки'}
+function renderLibrary(){const q=$('#search').value.trim().toLowerCase(), f=$('#filter').value; let html=''; const allBooks=books.filter(b=>{const x=st(b.id), hay=[b.title,b.author,b.category,b.series,...(b.tags||[])].join(' ').toLowerCase(); const hiddenOk=f==='hidden'?x.hidden:!x.hidden; const statusOk=f==='all'||f==='hidden'||x.status===f; return hiddenOk&&hay.includes(q)&&statusOk}); stats(); if(currentSeries){html+=`<button class="back primary" id="backToAll">← ${currentSeries.includes('/')?'Назад':'Усі книги'}</button>`; const childSeries=series.filter(s=>s.parent===currentSeries&&(s.title.toLowerCase().includes(q)||s.bookIds.some(id=>allBooks.find(b=>b.id===id)))).map(seriesCard).join(''); const arr=allBooks.filter(b=>b.series===currentSeries).sort(bookSort); html+=childSeries+arr.map(bookCard).join('')||'<div class="empty">У цій папці немає книг.</div>'}else{const serieCards=series.filter(s=>(!s.parent)&&(s.title.toLowerCase().includes(q)||s.bookIds.some(id=>allBooks.find(b=>b.id===id)))).map(seriesCard).join(''); const standalone=allBooks.filter(b=>!b.series).sort(bookSort).map(bookCard).join(''); html=serieCards+standalone} $('#library').innerHTML=html||'<div class="empty glass">PDF не знайдено. Додай файли у папку books/ і зроби push.</div>'; wireCards()}
 function bookSort(a,b){return priorityRank(st(a.id).priority)-priorityRank(st(b.id).priority)||((a.order??999999)-(b.order??999999))||a.title.localeCompare(b.title,'uk')}
-function seriesCard(s){const iconBadge=s.coverSource==='icon'?'icon.png/jpg':'Колаж 4 обкладинок';return `<article class="card seriesCard" data-series-open="${esc(s.path||s.title)}"><div class="coverWrap"><img class="cover" src="${url(s.cover)}" alt="${esc(s.title)}"></div><div class="cardBody"><div class="title">📚 ${esc(s.title)}</div><div class="meta">Папка · ${s.count} книг</div><div class="badges"><span class="badge">Папка GitHub</span><span class="badge">${iconBadge}</span></div><button class="primary small">Відкрити папку</button></div></article>`}
-function ratingText(r){return r?('★'.repeat(r)+'☆'.repeat(5-r)):'Без оцінки'}
+function seriesCard(s){const iconBadge=s.coverSource==='icon'?'icon.png/jpg':'Колаж 4 обкладинок'; return `<article class="card seriesCard" data-series-open="${esc(s.path||s.title)}"><div class="coverWrap"><img class="cover" src="${url(s.cover)}" alt="${esc(s.title)}"></div><div class="cardBody"><div class="title">📚 ${esc(s.title)}</div><div class="meta">Папка · ${s.count} книг</div><div class="badges"><span class="badge">Папка GitHub</span><span class="badge">${iconBadge}</span></div><button class="primary small">Відкрити папку</button></div></article>`}
 function bookCard(b){const x=st(b.id), pct=x.status==='read'?100:(x.totalUnits?Math.min(99,Math.round((x.unit||1)/x.totalUnits*100)):0), txt={read:'Прочитано',reading:'Читаю',unread:'Не прочитано'}[x.status||'unread']; const cover=b.cover?`<img class="cover" src="${url(b.cover)}" alt="${esc(b.title)}">`:`<div class="fallback">${esc(b.title)}</div>`; const order=b.series&&b.order?`№${b.order} · `:''; return `<article class="card ${x.hidden?'isHidden':''}"><div class="coverWrap">${cover}</div><div class="cardBody"><div class="title">${esc(b.title)}</div><div class="meta">${order}${esc(b.author)} · ${esc(b.category)}</div><div class="badges"><span class="badge">${txt}</span><span class="badge">${pct}%</span><span class="badge">${prioText(x.priority)}</span><span class="badge">${ratingText(x.rating)}</span>${x.hidden?'<span class="badge">Приховано</span>':''}</div><div class="bar"><i style="width:${pct}%"></i></div><div class="actions"><button class="primary small" data-open="${b.id}">Відкрити</button><button class="small" data-status="reading" data-id="${b.id}">Читаю</button><button class="small" data-status="read" data-id="${b.id}">✓</button><button class="small" data-hide="${b.id}">${x.hidden?'Показати':'Сховати'}</button><select class="small" data-priority="${b.id}"><option value="high" ${x.priority==='high'?'selected':''}>Високий</option><option value="normal" ${x.priority==='normal'?'selected':''}>Звичайний</option><option value="low" ${x.priority==='low'?'selected':''}>Низький</option></select><select class="small" data-rating="${b.id}"><option value="">Оцінка —</option><option value="0" ${x.rating===0?'selected':''}>0 ☆</option><option value="1" ${x.rating===1?'selected':''}>1 ★</option><option value="2" ${x.rating===2?'selected':''}>2 ★</option><option value="3" ${x.rating===3?'selected':''}>3 ★</option><option value="4" ${x.rating===4?'selected':''}>4 ★</option><option value="5" ${x.rating===5?'selected':''}>5 ★</option></select></div><textarea class="commentBox" data-comment="${b.id}" placeholder="Коментар…">${esc(x.comment)}</textarea></div></article>`}
 function prioText(p){return p==='high'?'Високий':p==='low'?'Низький':'Звичайний'}
 function wireCards(){ $$('[data-series-open]').forEach(c=>c.onclick=()=>{currentSeries=c.dataset.seriesOpen; renderLibrary()}); const back=$('#backToAll'); if(back)back.onclick=()=>{currentSeries=parentSeriesPath(currentSeries); renderLibrary()}; $$('[data-open]').forEach(b=>b.onclick=()=>openBook(b.dataset.open)); $$('[data-status]').forEach(b=>b.onclick=()=>{st(b.dataset.id).status=b.dataset.status; st(b.dataset.id).updatedAt=new Date().toISOString(); save(); renderLibrary()}); $$('[data-hide]').forEach(b=>b.onclick=()=>{const x=st(b.dataset.hide); x.hidden=!x.hidden; x.updatedAt=new Date().toISOString(); save(); renderLibrary()}); $$('[data-priority]').forEach(s=>s.onchange=()=>{st(s.dataset.priority).priority=s.value; save(); renderLibrary()}); $$('[data-rating]').forEach(s=>s.onchange=()=>{const x=st(s.dataset.rating); x.rating=s.value===''?null:Number(s.value); x.updatedAt=new Date().toISOString(); save(); renderLibrary()}); $$('[data-comment]').forEach(t=>t.onchange=()=>{const x=st(t.dataset.comment); x.comment=t.value; x.updatedAt=new Date().toISOString(); save()})}
