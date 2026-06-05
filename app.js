@@ -1,37 +1,192 @@
-import * as pdfjsLib from 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs';
-pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs';
-const $=s=>document.querySelector(s), $$=s=>Array.from(document.querySelectorAll(s));
-const KEY='books-progress-v8';
-let books=[], series=[], currentSeries='', progress=JSON.parse(localStorage.getItem(KEY)||'{}'), currentBook=null, pdfDoc=null, unit=1, rendering=false, deferredInstallPrompt=null;
-const pageWrap=$('#pageWrap');
-function st(id){return progress[id]||(progress[id]={status:'unread',unit:1,lastPage:1,totalUnits:null,totalPages:null,priority:'normal',updatedAt:null})}
-function save(){localStorage.setItem(KEY,JSON.stringify(progress,null,2)); stats()}
-function esc(s=''){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]))}
-function url(s){return encodeURI(s)}
-function mobile(){return matchMedia('(max-width:850px)').matches}
-function setTheme(t){document.body.dataset.theme=t; localStorage.setItem('books-theme',t); $('#themeSelect').value=t}
-setTheme(localStorage.getItem('books-theme')||'dark'); $('#themeSelect').onchange=e=>setTheme(e.target.value);
-function unitsForBook(){return mobile()?Math.max(1,(pdfDoc?.numPages||1)*2-1):Math.max(1,pdfDoc?.numPages||1)}
-function pdfPageForUnit(u){return mobile()?Math.floor(u/2)+1:u}
-function mobileSideForUnit(u){return (u===1 || u%2===0)?'right':'left'}
-function updateSliderLabel(){const label=$('#sliderLabel'); if(label) label.textContent=`${unit}/${unitsForBook()}`}
-async function loadBooks(){const r=await fetch('./data/books.json',{cache:'no-store'}); const data=await r.json(); books=data.books||[]; series=data.series||[]; $('#appTitle').textContent=data.title||'Книги Марка і Давида'; document.title=data.title||'Книги Марка і Давида'; renderLibrary()}
-function stats(){ $('#totalBooks').textContent=books.length; $('#readBooks').textContent=books.filter(b=>st(b.id).status==='read').length; $('#readingBooks').textContent=books.filter(b=>st(b.id).status==='reading').length }
-function priorityRank(v){return {high:0,normal:1,low:2}[v]??1}
-function renderLibrary(){const q=$('#search').value.trim().toLowerCase(), f=$('#filter').value; let html=''; const allBooks=books.filter(b=>{const x=st(b.id), hay=[b.title,b.author,b.category,b.series,...(b.tags||[])].join(' ').toLowerCase(); return hay.includes(q)&&(f==='all'||x.status===f)}); stats(); if(currentSeries){html+=`<button class="back primary" id="backToAll">← Усі книги</button>`; const arr=allBooks.filter(b=>b.series===currentSeries).sort(bookSort); html+=arr.map(bookCard).join('')||'<div class="empty">У цій серії немає книг.</div>'}else{const serieCards=series.filter(s=>s.title.toLowerCase().includes(q)||s.bookIds.some(id=>allBooks.find(b=>b.id===id))).map(seriesCard).join(''); const standalone=allBooks.filter(b=>!b.series).sort(bookSort).map(bookCard).join(''); html=serieCards+standalone} $('#library').innerHTML=html||'<div class="empty glass">PDF не знайдено. Додай файли у папку books/ і зроби push.</div>'; wireCards()}
-function bookSort(a,b){return priorityRank(st(a.id).priority)-priorityRank(st(b.id).priority)||((a.order??999999)-(b.order??999999))||a.title.localeCompare(b.title,'uk')}
-function seriesCard(s){return `<article class="card seriesCard" data-series-open="${esc(s.title)}"><div class="coverWrap"><img class="cover" src="${url(s.cover)}" alt="${esc(s.title)}"></div><div class="cardBody"><div class="title">📚 ${esc(s.title)}</div><div class="meta">Серія · ${s.count} книг</div><div class="badges"><span class="badge">Папка GitHub</span><span class="badge">Колаж 4 обкладинок</span></div><button class="primary small">Відкрити серію</button></div></article>`}
-function bookCard(b){const x=st(b.id), pct=x.status==='read'?100:(x.totalUnits?Math.min(99,Math.round((x.unit||1)/x.totalUnits*100)):0), txt={read:'Прочитано',reading:'Читаю',unread:'Не прочитано'}[x.status||'unread']; const cover=b.cover?`<img class="cover" src="${url(b.cover)}" alt="${esc(b.title)}">`:`<div class="fallback">${esc(b.title)}</div>`; const order=b.series&&b.order?`№${b.order} · `:''; return `<article class="card"><div class="coverWrap">${cover}</div><div class="cardBody"><div class="title">${esc(b.title)}</div><div class="meta">${order}${esc(b.author)} · ${esc(b.category)}</div><div class="badges"><span class="badge">${txt}</span><span class="badge">${pct}%</span><span class="badge">${prioText(x.priority)}</span></div><div class="bar"><i style="width:${pct}%"></i></div><div class="actions"><button class="primary small" data-open="${b.id}">Відкрити</button><button class="small" data-status="reading" data-id="${b.id}">Читаю</button><button class="small" data-status="read" data-id="${b.id}">✓</button><select class="small" data-priority="${b.id}"><option value="high" ${x.priority==='high'?'selected':''}>Високий</option><option value="normal" ${x.priority==='normal'?'selected':''}>Звичайний</option><option value="low" ${x.priority==='low'?'selected':''}>Низький</option></select></div></div></article>`}
-function prioText(p){return p==='high'?'Високий':p==='low'?'Низький':'Звичайний'}
-function wireCards(){ $$('[data-series-open]').forEach(c=>c.onclick=()=>{currentSeries=c.dataset.seriesOpen; renderLibrary()}); const back=$('#backToAll'); if(back)back.onclick=()=>{currentSeries=''; renderLibrary()}; $$('[data-open]').forEach(b=>b.onclick=()=>openBook(b.dataset.open)); $$('[data-status]').forEach(b=>b.onclick=()=>{st(b.dataset.id).status=b.dataset.status; st(b.dataset.id).updatedAt=new Date().toISOString(); save(); renderLibrary()}); $$('[data-priority]').forEach(s=>s.onchange=()=>{st(s.dataset.priority).priority=s.value; save(); renderLibrary()})}
-async function openBook(id){currentBook=books.find(b=>b.id===id); if(!currentBook)return; $('#reader').classList.add('open'); $('#readerBookTitle').textContent=currentBook.title; const x=st(id); if(x.status==='unread')x.status='reading'; pdfDoc=await pdfjsLib.getDocument(url(currentBook.file)).promise; x.totalPages=pdfDoc.numPages; x.totalUnits=unitsForBook(); unit=Math.min(Math.max(1,x.unit||1),x.totalUnits); $('#pageSlider').max=x.totalUnits; updateSliderLabel(); save(); await renderUnit(unit)}
-function fitScale(w,h){const top=$('.readerTop').offsetHeight, bottom=$('.readerBottom').offsetHeight, availW=innerWidth-16, availH=innerHeight-top-bottom-16; return Math.min(availW/w, availH/h)}
-async function renderHalf(pageNum,side){const page=await pdfDoc.getPage(pageNum), base=page.getViewport({scale:1}); const w=base.width/2,h=base.height, scale=fitScale(w,h), vp=page.getViewport({scale}); const c=document.createElement('canvas'), cx=c.getContext('2d'), tmp=document.createElement('canvas'), tx=tmp.getContext('2d'); tmp.width=vp.width; tmp.height=vp.height; await page.render({canvasContext:tx,viewport:vp}).promise; c.className='pageCanvas'; c.width=Math.floor(vp.width/2); c.height=vp.height; const sx=side==='right'?Math.floor(vp.width/2):0; cx.drawImage(tmp,sx,0,Math.floor(vp.width/2),vp.height,0,0,c.width,c.height); return c}
-async function renderSpread(pageNum){const page=await pdfDoc.getPage(pageNum), base=page.getViewport({scale:1}); const gap=10, scale=Math.min((innerWidth-22-gap)/base.width,(innerHeight-$('.readerTop').offsetHeight-$('.readerBottom').offsetHeight-16)/base.height); const vp=page.getViewport({scale}); const tmp=document.createElement('canvas'), tx=tmp.getContext('2d'); tmp.width=vp.width; tmp.height=vp.height; await page.render({canvasContext:tx,viewport:vp}).promise; const left=document.createElement('canvas'), right=document.createElement('canvas'); left.className='pageCanvas spreadCanvas'; right.className='pageCanvas spreadCanvas'; left.width=right.width=Math.floor(vp.width/2); left.height=right.height=vp.height; left.getContext('2d').drawImage(tmp,0,0,left.width,vp.height,0,0,left.width,left.height); right.getContext('2d').drawImage(tmp,left.width,0,right.width,vp.height,0,0,right.width,right.height); return [left,right]}
-async function renderUnit(u){if(!pdfDoc||rendering)return; rendering=true; pageWrap.innerHTML=''; let p,label; if(mobile()){p=pdfPageForUnit(u); const side=mobileSideForUnit(u); pageWrap.appendChild(await renderHalf(p,side)); label=`${currentBook.title} · ${side==='right'?'права':'ліва'} · ${u}/${unitsForBook()}`}else{p=u; (await renderSpread(p)).forEach(c=>pageWrap.appendChild(c)); label=`${currentBook.title} · розворот ${p}/${pdfDoc.numPages}`} $('#pageInfo').textContent=label; $('#pageSlider').value=u; unit=u; updateSliderLabel(); const x=st(currentBook.id); x.unit=u; x.lastPage=p; x.totalUnits=unitsForBook(); x.totalPages=pdfDoc.numPages; x.updatedAt=new Date().toISOString(); if(u>=x.totalUnits)x.status='read'; save(); rendering=false}
-async function turnTo(n,dir){if(!pdfDoc||n<1||n>unitsForBook()||rendering)return; pageWrap.classList.add(dir==='next'?'flipNext':'flipPrev'); await new Promise(r=>setTimeout(r,90)); await renderUnit(n); await new Promise(r=>setTimeout(r,50)); pageWrap.classList.remove('flipNext','flipPrev'); if(st(currentBook.id).status==='read')renderLibrary()}
-$('#prevPage').onclick=()=>turnTo(unit-1,'prev'); $('#nextPage').onclick=()=>turnTo(unit+1,'next'); $('#tapPrev').onclick=()=>$('#prevPage').click(); $('#tapNext').onclick=()=>$('#nextPage').click(); $('#pageSlider').oninput=e=>{unit=Number(e.target.value); updateSliderLabel()}; $('#pageSlider').onchange=e=>turnTo(Number(e.target.value),Number(e.target.value)>unit?'next':'prev'); $('#closeReader').onclick=()=>{$('#reader').classList.remove('open'); pdfDoc=null; renderLibrary()}; $('#markRead').onclick=()=>{if(!currentBook)return; const x=st(currentBook.id); x.status='read'; x.unit=unitsForBook(); save(); renderLibrary(); alert('Книжку позначено як прочитану')};
-let sx=0,sy=0; $('#reader').addEventListener('touchstart',e=>{sx=e.changedTouches[0].clientX; sy=e.changedTouches[0].clientY},{passive:true}); $('#reader').addEventListener('touchend',e=>{const dx=e.changedTouches[0].clientX-sx,dy=e.changedTouches[0].clientY-sy; if(Math.abs(dx)>55&&Math.abs(dx)>Math.abs(dy)*1.4){dx<0?$('#nextPage').click():$('#prevPage').click()}},{passive:true}); addEventListener('resize',()=>{if(pdfDoc){st(currentBook.id).totalUnits=unitsForBook(); $('#pageSlider').max=unitsForBook(); renderUnit(Math.min(unit,unitsForBook()))}}); addEventListener('keydown',e=>{if(!$('#reader').classList.contains('open'))return; if(e.key==='ArrowLeft')$('#prevPage').click(); if(e.key==='ArrowRight')$('#nextPage').click(); if(e.key==='Escape')$('#closeReader').click()});
-$('#search').oninput=renderLibrary; $('#filter').onchange=renderLibrary; $('#exportProgress').onclick=()=>{const blob=new Blob([JSON.stringify(progress,null,2)],{type:'application/json'}),a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='progress.json'; a.click(); URL.revokeObjectURL(a.href)}; $('#importProgress').onchange=async e=>{const f=e.target.files[0]; if(!f)return; progress=JSON.parse(await f.text()); save(); renderLibrary()};
-window.addEventListener('beforeinstallprompt',e=>{e.preventDefault(); deferredInstallPrompt=e; showInstall(false)}); function isiOS(){return /iphone|ipad|ipod/i.test(navigator.userAgent)} function standalone(){return matchMedia('(display-mode: standalone)').matches||navigator.standalone} function showInstall(ios){if(standalone()||localStorage.getItem('install-closed'))return; $('#installPanel').classList.remove('hidden'); $('#installText').textContent=ios?'iPhone: Safari → Поділитися → На початковий екран.':'Натисни кнопку, щоб встановити бібліотеку.'; $('#installBtn').textContent=ios?'Інструкція':'Встановити'} $('#installBtn').onclick=async()=>{if(deferredInstallPrompt){deferredInstallPrompt.prompt(); await deferredInstallPrompt.userChoice; deferredInstallPrompt=null; $('#installPanel').classList.add('hidden')}else if(isiOS())alert('Safari → Поділитися → На початковий екран.')}; $('#closeInstall').onclick=()=>{localStorage.setItem('install-closed','1'); $('#installPanel').classList.add('hidden')}; if(isiOS())setTimeout(()=>showInstall(true),800); if('serviceWorker'in navigator)addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(console.warn));
-loadBooks().catch(e=>{$('#library').innerHTML='<div class="empty glass">Не вдалося завантажити data/books.json. Дочекайся зеленого GitHub Actions.</div>'; console.error(e)});
+(() => {
+  'use strict';
+
+  const state = {
+    data: null,
+    path: [],
+    query: '',
+    theme: localStorage.getItem('books-theme') || 'light',
+  };
+
+  const $ = (id) => document.getElementById(id);
+  const norm = (s) => (s || '').toString().toLowerCase().trim();
+
+  function setTheme(theme) {
+    state.theme = theme;
+    localStorage.setItem('books-theme', theme);
+    document.documentElement.dataset.theme = theme;
+    const sel = $('themeSelect');
+    if (sel) sel.value = theme;
+  }
+
+  function currentNode() {
+    let node = { title: state.data.title, path: '', items: state.data.items || [] };
+    for (const segment of state.path) {
+      node = (node.items || []).find((x) => x.type === 'folder' && x.title === segment) || node;
+    }
+    return node;
+  }
+
+  function allFoldersAndBooks(items, acc = []) {
+    for (const item of items || []) {
+      acc.push(item);
+      if (item.type === 'folder') allFoldersAndBooks(item.items, acc);
+    }
+    return acc;
+  }
+
+  function breadcrumb() {
+    const el = $('breadcrumb');
+    if (!el) return;
+    el.innerHTML = '';
+    const root = document.createElement('button');
+    root.className = 'crumb';
+    root.textContent = 'Бібліотека';
+    root.onclick = () => { state.path = []; render(); };
+    el.appendChild(root);
+    state.path.forEach((part, idx) => {
+      const sep = document.createElement('span');
+      sep.className = 'sep';
+      sep.textContent = '›';
+      el.appendChild(sep);
+      const b = document.createElement('button');
+      b.className = 'crumb';
+      b.textContent = part;
+      b.onclick = () => { state.path = state.path.slice(0, idx + 1); render(); };
+      el.appendChild(b);
+    });
+  }
+
+  function itemCard(item) {
+    const card = document.createElement('article');
+    card.className = `card ${item.type}`;
+    card.tabIndex = 0;
+
+    const imgWrap = document.createElement('div');
+    imgWrap.className = 'coverWrap';
+    const img = document.createElement('img');
+    img.className = 'cover';
+    img.loading = 'lazy';
+    img.alt = item.title || '';
+    img.src = item.cover || '';
+    img.onerror = () => { imgWrap.classList.add('noCover'); img.remove(); };
+    imgWrap.appendChild(img);
+
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    const title = document.createElement('h3');
+    title.textContent = item.title || 'Без назви';
+    const sub = document.createElement('p');
+    if (item.type === 'folder') {
+      sub.textContent = `${item.bookCount || 0} книг${item.coverSource === 'icon' ? ' · icon.*' : ''}`;
+    } else {
+      sub.textContent = item.folder || 'PDF';
+    }
+    meta.append(title, sub);
+
+    card.append(imgWrap, meta);
+
+    const open = () => {
+      if (item.type === 'folder') {
+        state.path.push(item.title);
+        state.query = '';
+        const input = $('searchInput');
+        if (input) input.value = '';
+        render();
+      } else {
+        openReader(item);
+      }
+    };
+    card.onclick = open;
+    card.onkeydown = (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); }
+    };
+    return card;
+  }
+
+  function openReader(book) {
+    const modal = $('reader');
+    const frame = $('readerFrame');
+    const title = $('readerTitle');
+    const link = $('downloadLink');
+    if (!modal || !frame) {
+      window.open(book.file, '_blank');
+      return;
+    }
+    title.textContent = book.title || 'PDF';
+    frame.src = book.file;
+    link.href = book.file;
+    modal.hidden = false;
+    document.body.classList.add('readerOpen');
+  }
+
+  function closeReader() {
+    const modal = $('reader');
+    const frame = $('readerFrame');
+    if (frame) frame.src = 'about:blank';
+    if (modal) modal.hidden = true;
+    document.body.classList.remove('readerOpen');
+  }
+
+  function render() {
+    breadcrumb();
+    const grid = $('grid');
+    const stats = $('stats');
+    if (!grid) return;
+
+    let items;
+    if (state.query) {
+      const q = norm(state.query);
+      items = allFoldersAndBooks(state.data.items).filter((x) =>
+        norm(x.title).includes(q) || norm(x.path).includes(q) || norm(x.folder).includes(q)
+      );
+    } else {
+      items = currentNode().items || [];
+    }
+
+    grid.innerHTML = '';
+    if (items.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'empty';
+      empty.textContent = state.query ? 'Нічого не знайдено' : 'У цій папці поки немає книг';
+      grid.appendChild(empty);
+    } else {
+      for (const item of items) grid.appendChild(itemCard(item));
+    }
+
+    if (stats) {
+      const folders = allFoldersAndBooks(state.data.items).filter((x) => x.type === 'folder').length;
+      stats.textContent = `${state.data.totalBooks || 0} книг · ${folders} папок`;
+    }
+  }
+
+  async function load() {
+    setTheme(state.theme);
+    try {
+      const res = await fetch('data/library.json', { cache: 'no-store' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      state.data = await res.json();
+    } catch (e) {
+      console.error(e);
+      state.data = { title: 'PDF Library', totalBooks: 0, items: [], flatBooks: [] };
+      const err = $('error');
+      if (err) {
+        err.hidden = false;
+        err.textContent = 'Не вдалося завантажити data/library.json. Запусти python build_library.py і закоміть data/ та covers/.';
+      }
+    }
+
+    $('appTitle').textContent = state.data.title || 'PDF Library';
+    $('searchInput').addEventListener('input', (e) => { state.query = e.target.value; render(); });
+    $('themeSelect').addEventListener('change', (e) => setTheme(e.target.value));
+    $('closeReader').addEventListener('click', closeReader);
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeReader(); });
+    render();
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', load);
+})();
