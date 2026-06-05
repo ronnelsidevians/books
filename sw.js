@@ -1,4 +1,4 @@
-const CACHE='books-pwa-v8-mobile-ui-v4';
+const CACHE='books-pwa-v8-mobile-ui-v5';
 const BASE='/books/';
 const SHELL=[BASE,BASE+'index.html',BASE+'style.css',BASE+'app.js',BASE+'manifest.webmanifest',BASE+'icons/icon-192.png'];
 self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(SHELL)).then(()=>self.skipWaiting())));
